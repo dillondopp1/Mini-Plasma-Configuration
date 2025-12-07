@@ -44,6 +44,9 @@ DEFAULT_2040_PRICES = {
 
 STANDARD_LENGTHS_MM = [400, 600, 800, 1000, 1220, 1500]
 
+# Fixed costs
+MISC_ELECTRONICS_COST = 30.0  # Fixed cost for misc electronics on every machine
+
 
 def mm_to_in(mm: float) -> float:
     return mm / 25.4
@@ -125,8 +128,8 @@ def calculate_quote_for_config(
             steel_price_per_ft=steel_price_per_ft,
         )
     
-    # Basic materials cost (extrusions + steel + donor kit + plasma unit)
-    base_material_cost = extrusion_cost + steel_cost + donor_cost + plasma_unit_cost
+    # Basic materials cost (extrusions + steel + donor kit + plasma unit + misc electronics)
+    base_material_cost = extrusion_cost + steel_cost + donor_cost + plasma_unit_cost + MISC_ELECTRONICS_COST
     
     # Add misc % if any
     misc_cost = base_material_cost * (misc_addon_pct / 100.0)
@@ -493,8 +496,8 @@ def main():
         actual_x_ft = round_ft(actual_x_in)
         actual_y_ft = round_ft(actual_y_in)
 
-        # Basic materials cost (extrusions + steel + donor kit + plasma unit)
-        base_material_cost = extrusion_cost + steel_cost + donor_cost + plasma_unit_cost
+        # Basic materials cost (extrusions + steel + donor kit + plasma unit + misc electronics)
+        base_material_cost = extrusion_cost + steel_cost + donor_cost + plasma_unit_cost + MISC_ELECTRONICS_COST
 
         # Add misc % if any
         misc_cost = base_material_cost * (misc_addon_pct / 100.0)
@@ -528,6 +531,7 @@ def main():
             st.metric("Extrusion cost ($)", f"{extrusion_cost:,.2f}")
             st.metric("Steel cost ($)", f"{steel_cost:,.2f}")
             st.metric("Donor kit cost ($)", f"{donor_cost:,.2f}")
+            st.metric("Misc Electronics ($)", f"{MISC_ELECTRONICS_COST:,.2f}")
             if plasma_unit_cost > 0:
                 st.metric(f"Plasma unit ({plasma_unit_name}) ($)", f"{plasma_unit_cost:,.2f}")
             st.metric("Misc add-on ($)", f"{misc_cost:,.2f}")
@@ -579,6 +583,9 @@ def main():
         donor_rows = [{
             "Item": "Amazon donor CNC kit (electronics, motors, wiring, plates, etc.)",
             "Cost ($)": round(donor_cost, 2),
+        }, {
+            "Item": "Misc Electronics",
+            "Cost ($)": round(MISC_ELECTRONICS_COST, 2),
         }]
         if plasma_unit_cost > 0:
             donor_rows.append({
