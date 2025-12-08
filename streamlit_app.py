@@ -499,7 +499,7 @@ def main():
     profit_per_sqft = st.sidebar.number_input(
         "Profit per square foot of nominal area ($/ft²)",
         min_value=0.0,
-        value=45.0,
+        value=40.0,
         step=5.0,
         help="Additional profit for each square foot of nominal working area.",
     )
