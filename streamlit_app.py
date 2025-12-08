@@ -11,7 +11,7 @@ import streamlit as st
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib import colors
 
 
@@ -142,6 +142,13 @@ def generate_quote_pdf(
         spaceBefore=12,
     )
     normal_style = styles['Normal']
+    contact_style = ParagraphStyle(
+        'ContactStyle',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.HexColor('#666666'),
+        alignment=1,  # Center alignment
+    )
     price_style = ParagraphStyle(
         'PriceStyle',
         parent=styles['Normal'],
@@ -149,6 +156,26 @@ def generate_quote_pdf(
         textColor=colors.HexColor('#1f77b4'),
         alignment=1,  # Center alignment
     )
+    
+    # Logo/Branding Image at the top
+    logo_paths = ['logo.png', 'logo.jpg', 'branding.png', 'branding.jpg', 'elevatecnc_logo.png', 'elevatecnc_logo.jpg']
+    logo_found = False
+    for logo_path in logo_paths:
+        if os.path.exists(logo_path):
+            try:
+                logo = Image(logo_path, width=3*inch, height=1*inch, kind='proportional')
+                story.append(logo)
+                story.append(Spacer(1, 0.1*inch))
+                logo_found = True
+                break
+            except Exception:
+                continue
+    
+    # Company Contact Information
+    story.append(Paragraph("<b>Elevate CNC LLC</b>", contact_style))
+    story.append(Paragraph("Elevatecnc.com | elevatecncllc@gmail.com", contact_style))
+    story.append(Paragraph("Phone: 208-557-1587", contact_style))
+    story.append(Spacer(1, 0.3*inch))
     
     # Title
     story.append(Paragraph("QUOTE", title_style))
