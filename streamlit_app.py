@@ -1,10 +1,17 @@
+import io
 import json
 import math
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, List, Tuple
 
 import streamlit as st
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib import colors
 
 
 # ----------------------------
@@ -102,6 +109,143 @@ def save_plasma_units(plasma_units: Dict[str, float]) -> None:
             json.dump(plasma_units, f, indent=2)
     except IOError:
         st.error("Failed to save plasma units to file.")
+
+
+def generate_quote_pdf(
+    customer_name: str,
+    config_name: str,
+    actual_x_ft: float,
+    actual_y_ft: float,
+    sell_price: float,
+) -> bytes:
+    """
+    Generate a PDF quote with customer name, price, and specifications.
+    Returns the PDF as bytes.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    story = []
+    
+    # Define styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#1f77b4'),
+        spaceAfter=30,
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=colors.HexColor('#333333'),
+        spaceAfter=12,
+        spaceBefore=12,
+    )
+    normal_style = styles['Normal']
+    
+    # Title
+    story.append(Paragraph("QUOTE", title_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Customer and Date
+    story.append(Paragraph(f"<b>Customer:</b> {customer_name}", normal_style))
+    story.append(Paragraph(f"<b>Date:</b> {datetime.now().strftime('%B %d, %Y')}", normal_style))
+    story.append(Paragraph(f"<b>Configuration:</b> {config_name}", normal_style))
+    story.append(Paragraph(f"<b>Working Area:</b> {actual_x_ft:.2f} ft × {actual_y_ft:.2f} ft", normal_style))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Price
+    story.append(Paragraph(f"<b><font size=18>Total Price: ${sell_price:,.2f}</font></b>", normal_style))
+    story.append(Spacer(1, 0.4*inch))
+    
+    # Specifications
+    story.append(Paragraph("SPECIFICATIONS", heading_style))
+    story.append(Spacer(1, 0.1*inch))
+    
+    # Motion System
+    story.append(Paragraph("<b>Motion System</b>", heading_style))
+    motion_specs = [
+        "Drive Type: Belt-driven X and Y axes",
+        "Linear Motion: V-wheel system on aluminum V-slot extrusions",
+        "Maximum Travel Speed: ~10,000 mm/min motion capability",
+        "Motor Type: NEMA 17 stepper motors",
+        "Microstepping: Up to 1/32 depending on controller configuration",
+    ]
+    for spec in motion_specs:
+        story.append(Paragraph(f"• {spec}", normal_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Controller & Electronics
+    story.append(Paragraph("<b>Controller & Electronics</b>", heading_style))
+    controller_specs = [
+        "Mainboard: 32-bit GRBL-based motion controller",
+        "Firmware: Standard GRBL (configured for plasma torch on/off control)",
+        "Supported Communication:",
+        "  • USB connection to PC",
+        "  • Wi-Fi (if included in your configuration)",
+        "  • Offline job execution using MicroSD/TF card",
+        "Power Input: 12V DC motion system supply",
+        "Torch Control Output: Isolated relay output for plasma \"torch fire\" signal",
+        "Safety Interlocks:",
+        "  • Emergency stop button",
+    ]
+    for spec in controller_specs:
+        story.append(Paragraph(f"• {spec}", normal_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Software Compatibility
+    story.append(Paragraph("<b>Software Compatibility</b>", heading_style))
+    software_specs = [
+        "Compatible Control Software:",
+        "  • LaserGRBL",
+        "  • OpenBuilds CONTROL",
+        "  • Universal G-Code Sender (UGS)",
+        "  • Any GRBL-compatible sender",
+        "G-Code Support: Standard GRBL G-code for 2-axis plasma cutting",
+        "Design File Support: SVG, DXF, PNG/JPG (converted to paths), AI (via converters)",
+    ]
+    for spec in software_specs:
+        story.append(Paragraph(f"• {spec}", normal_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    # User Interface
+    story.append(Paragraph("<b>User Interface</b>", heading_style))
+    ui_specs = [
+        "Touch Display (Optional): 3.5\" color LCD for offline control",
+        "Offline Operation: Supported via MicroSD card",
+    ]
+    for spec in ui_specs:
+        story.append(Paragraph(f"• {spec}", normal_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Structural System
+    story.append(Paragraph("<b>Structural System</b>", heading_style))
+    structural_specs = [
+        "Frame Construction: Aluminum V-slot extrusion framework",
+        "Gantry System: Reinforced aluminum crossbeam with adjustable carriage",
+        "Torch Mounting: Custom fixed or adjustable plasma torch holder",
+    ]
+    for spec in structural_specs:
+        story.append(Paragraph(f"• {spec}", normal_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Plasma System Integration
+    story.append(Paragraph("<b>Plasma System Integration</b>", heading_style))
+    plasma_specs = [
+        "Torch Trigger: Dry-contact relay output compatible with most pilot-arc or blowback torch systems",
+        "Signal Isolation: Relay isolator protects controller from arc interference",
+        "Grounding Requirements: Dedicated ground recommended for plasma cutting",
+        "Z-Axis Setup: Manual or fixed-height torch mount (motorized Z optional upgrade)",
+    ]
+    for spec in plasma_specs:
+        story.append(Paragraph(f"• {spec}", normal_style))
+    
+    # Build PDF
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 def calculate_quote_for_config(
@@ -317,7 +461,7 @@ def main():
     steel_price_per_ft = st.sidebar.number_input(
         "Steel price per foot ($)",
         min_value=0.0,
-        value=4.0,
+        value=5.75,
         step=0.25,
     )
 
@@ -434,6 +578,9 @@ def main():
         f"**Nominal working area (target):** {nominal_x_ft:.2f} ft × {nominal_y_ft:.2f} ft "
         f"(Area: {nominal_area_sqft:.2f} ft²)"
     )
+
+    # Customer name input for PDF quote
+    customer_name = st.text_input("Customer Name (for PDF quote)", value="", key="customer_name")
 
     # Comparison button for all configurations
     if st.button("Compare All Configurations"):
@@ -599,6 +746,34 @@ def main():
             "which will reduce your true cost and increase profit. "
             "This tool assumes you're buying the listed extrusions new for a conservative estimate."
         )
+
+        # Store quote data for PDF generation
+        st.session_state.quote_data = {
+            "customer_name": customer_name if customer_name else "Customer",
+            "config_name": config.name,
+            "actual_x_ft": actual_x_ft,
+            "actual_y_ft": actual_y_ft,
+            "sell_price": sell_price,
+        }
+
+        # PDF Quote Generation
+        st.subheader("Generate PDF Quote")
+        if customer_name:
+            pdf_bytes = generate_quote_pdf(
+                customer_name=customer_name,
+                config_name=config.name,
+                actual_x_ft=actual_x_ft,
+                actual_y_ft=actual_y_ft,
+                sell_price=sell_price,
+            )
+            st.download_button(
+                label="Download PDF Quote",
+                data=pdf_bytes,
+                file_name=f"Quote_{customer_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+            )
+        else:
+            st.info("Please enter a customer name above to generate a PDF quote.")
 
 
 if __name__ == "__main__":
