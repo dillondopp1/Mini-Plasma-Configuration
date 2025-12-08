@@ -114,13 +114,10 @@ def save_plasma_units(plasma_units: Dict[str, float]) -> None:
 
 def generate_quote_pdf(
     customer_name: str,
-    config_name: str,
-    actual_x_ft: float,
-    actual_y_ft: float,
-    sell_price: float,
+    configs_data: List[Dict],  # List of dicts with: config_name, actual_x_ft, actual_y_ft, sell_price
 ) -> bytes:
     """
-    Generate a PDF quote with customer name, price, and specifications.
+    Generate a PDF quote with customer name, prices (side by side if multiple), and specifications.
     Returns the PDF as bytes.
     """
     buffer = io.BytesIO()
@@ -145,6 +142,13 @@ def generate_quote_pdf(
         spaceBefore=12,
     )
     normal_style = styles['Normal']
+    price_style = ParagraphStyle(
+        'PriceStyle',
+        parent=styles['Normal'],
+        fontSize=16,
+        textColor=colors.HexColor('#1f77b4'),
+        alignment=1,  # Center alignment
+    )
     
     # Title
     story.append(Paragraph("QUOTE", title_style))
@@ -152,15 +156,56 @@ def generate_quote_pdf(
     
     # Customer and Date (escape XML special characters)
     escaped_customer_name = html.escape(customer_name)
-    escaped_config_name = html.escape(config_name)
     story.append(Paragraph(f"<b>Customer:</b> {escaped_customer_name}", normal_style))
     story.append(Paragraph(f"<b>Date:</b> {datetime.now().strftime('%B %d, %Y')}", normal_style))
-    story.append(Paragraph(f"<b>Configuration:</b> {escaped_config_name}", normal_style))
-    story.append(Paragraph(f"<b>Working Area:</b> {actual_x_ft:.2f} ft × {actual_y_ft:.2f} ft", normal_style))
     story.append(Spacer(1, 0.3*inch))
     
-    # Price
-    story.append(Paragraph(f"<b><font size=18>Total Price: ${sell_price:,.2f}</font></b>", normal_style))
+    # Prices - side by side if multiple, single if one
+    if len(configs_data) == 1:
+        # Single configuration
+        config = configs_data[0]
+        escaped_config_name = html.escape(config['config_name'])
+        story.append(Paragraph(f"<b>Configuration:</b> {escaped_config_name}", normal_style))
+        story.append(Paragraph(f"<b>Working Area:</b> {config['actual_x_ft']:.2f} ft × {config['actual_y_ft']:.2f} ft", normal_style))
+        story.append(Spacer(1, 0.2*inch))
+        story.append(Paragraph(f"<b><font size=18>Total Price: ${config['sell_price']:,.2f}</font></b>", normal_style))
+    else:
+        # Multiple configurations - create a table
+        story.append(Paragraph("<b>Configurations & Pricing</b>", heading_style))
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Create table data
+        table_data = [["Configuration", "Working Area", "Price"]]
+        total_price = 0
+        for config in configs_data:
+            escaped_config_name = html.escape(config['config_name'])
+            area_str = f"{config['actual_x_ft']:.2f} ft × {config['actual_y_ft']:.2f} ft"
+            price_str = f"${config['sell_price']:,.2f}"
+            table_data.append([escaped_config_name, area_str, price_str])
+            total_price += config['sell_price']
+        
+        # Add total row
+        table_data.append(["<b>TOTAL</b>", "", f"<b>${total_price:,.2f}</b>"])
+        
+        # Create table
+        table = Table(table_data, colWidths=[3*inch, 2.5*inch, 1.5*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#d3d3d3')),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 0.2*inch))
+        story.append(Paragraph(f"<b><font size=18>Grand Total: ${total_price:,.2f}</font></b>", price_style))
+    
     story.append(Spacer(1, 0.4*inch))
     
     # Specifications
@@ -567,20 +612,35 @@ def main():
     # Main: machine selection
     st.header("Machine Configuration")
 
-    config_name = st.selectbox(
-        "Select machine size",
+    selected_configs = st.multiselect(
+        "Select machine size(s) for quote",
         list(MACHINE_CONFIGS.keys()),
+        help="Select one or more configurations to include in the quote"
     )
-    config = MACHINE_CONFIGS[config_name]
 
-    nominal_x_ft = config.x_work_in / 12.0
-    nominal_y_ft = config.y_work_in / 12.0
-    nominal_area_sqft = nominal_x_ft * nominal_y_ft
-
-    st.write(
-        f"**Nominal working area (target):** {nominal_x_ft:.2f} ft × {nominal_y_ft:.2f} ft "
-        f"(Area: {nominal_area_sqft:.2f} ft²)"
-    )
+    if not selected_configs:
+        st.info("Please select at least one machine configuration to generate a quote.")
+        return
+    
+    # Display selected configurations
+    if len(selected_configs) == 1:
+        config = MACHINE_CONFIGS[selected_configs[0]]
+        nominal_x_ft = config.x_work_in / 12.0
+        nominal_y_ft = config.y_work_in / 12.0
+        nominal_area_sqft = nominal_x_ft * nominal_y_ft
+        st.write(
+            f"**Selected Configuration:** {selected_configs[0]}  \n"
+            f"**Nominal working area (target):** {nominal_x_ft:.2f} ft × {nominal_y_ft:.2f} ft "
+            f"(Area: {nominal_area_sqft:.2f} ft²)"
+        )
+    else:
+        st.write(f"**Selected Configurations:** {len(selected_configs)}")
+        for config_name in selected_configs:
+            config = MACHINE_CONFIGS[config_name]
+            nominal_x_ft = config.x_work_in / 12.0
+            nominal_y_ft = config.y_work_in / 12.0
+            nominal_area_sqft = nominal_x_ft * nominal_y_ft
+            st.write(f"- **{config_name}:** {nominal_x_ft:.2f} ft × {nominal_y_ft:.2f} ft (Area: {nominal_area_sqft:.2f} ft²)")
 
     # Customer name input for PDF quote
     customer_name = st.text_input("Customer Name (for PDF quote)", value="", key="customer_name")
@@ -633,116 +693,161 @@ def main():
             st.metric("Average Price", f"${avg_price:,.0f}")
 
     if st.button("Generate Quote"):
-        # Compute costs and parts
-        extrusion_parts, steel_parts, extrusion_cost, steel_cost, actual_work = \
-            calculate_extrusions_and_steel(
-                config=config,
-                price_2020=price_2020,
-                price_2040_map=price_2040_map,
-                steel_price_per_ft=steel_price_per_ft,
-            )
-
-        actual_x_in, actual_y_in = actual_work
-        actual_x_ft = round_ft(actual_x_in)
-        actual_y_ft = round_ft(actual_y_in)
-
-        # Basic materials cost (extrusions + steel + donor kit + plasma unit + misc electronics)
-        base_material_cost = extrusion_cost + steel_cost + donor_cost + plasma_unit_cost + MISC_ELECTRONICS_COST
-
-        # Add misc % if any
-        misc_cost = base_material_cost * (misc_addon_pct / 100.0)
-        total_cost = base_material_cost + misc_cost
-
-        # ---------- Area-based pricing ----------
-        # profit = base_profit + area_sqft * profit_per_sqft
-        area_sqft = nominal_area_sqft
-        base_profit_calc = base_profit + area_sqft * profit_per_sqft
-        sell_price = total_cost + base_profit_calc
+        # Calculate quotes for all selected configurations
+        all_quotes = []
+        configs_data_for_pdf = []
+        total_grand_total = 0
         
-        # Round sell_price up to the nearest $10
-        sell_price = math.ceil(sell_price / 10.0) * 10.0
-        
-        # Recalculate actual profit after rounding
-        profit = sell_price - total_cost
+        for config_name in selected_configs:
+            config = MACHINE_CONFIGS[config_name]
+            
+            # Compute costs and parts
+            extrusion_parts, steel_parts, extrusion_cost, steel_cost, actual_work = \
+                calculate_extrusions_and_steel(
+                    config=config,
+                    price_2020=price_2020,
+                    price_2040_map=price_2040_map,
+                    steel_price_per_ft=steel_price_per_ft,
+                )
 
-        actual_margin_pct = (profit / sell_price * 100.0) if sell_price > 0 else 0.0
+            actual_x_in, actual_y_in = actual_work
+            actual_x_ft = round_ft(actual_x_in)
+            actual_y_ft = round_ft(actual_y_in)
+
+            # Basic materials cost (extrusions + steel + donor kit + plasma unit + misc electronics)
+            base_material_cost = extrusion_cost + steel_cost + donor_cost + plasma_unit_cost + MISC_ELECTRONICS_COST
+
+            # Add misc % if any
+            misc_cost = base_material_cost * (misc_addon_pct / 100.0)
+            total_cost = base_material_cost + misc_cost
+
+            # Calculate area and profit
+            nominal_x_ft = config.x_work_in / 12.0
+            nominal_y_ft = config.y_work_in / 12.0
+            area_sqft = nominal_x_ft * nominal_y_ft
+
+            # ---------- Area-based pricing ----------
+            base_profit_calc = base_profit + area_sqft * profit_per_sqft
+            sell_price = total_cost + base_profit_calc
+            
+            # Round sell_price up to the nearest $10
+            sell_price = math.ceil(sell_price / 10.0) * 10.0
+            
+            # Recalculate actual profit after rounding
+            profit = sell_price - total_cost
+            actual_margin_pct = (profit / sell_price * 100.0) if sell_price > 0 else 0.0
+            
+            # Store quote data
+            quote_data = {
+                "config_name": config_name,
+                "config": config,
+                "extrusion_parts": extrusion_parts,
+                "steel_parts": steel_parts,
+                "extrusion_cost": extrusion_cost,
+                "steel_cost": steel_cost,
+                "actual_x_ft": actual_x_ft,
+                "actual_y_ft": actual_y_ft,
+                "area_sqft": area_sqft,
+                "total_cost": total_cost,
+                "sell_price": sell_price,
+                "profit": profit,
+                "actual_margin_pct": actual_margin_pct,
+                "misc_cost": misc_cost,
+            }
+            all_quotes.append(quote_data)
+            configs_data_for_pdf.append({
+                "config_name": config_name,
+                "actual_x_ft": actual_x_ft,
+                "actual_y_ft": actual_y_ft,
+                "sell_price": sell_price,
+            })
+            total_grand_total += sell_price
 
         # -------- Summary --------
-        st.subheader("Summary")
+        st.subheader("Quote Summary")
+        
+        if len(all_quotes) == 1:
+            # Single configuration - show detailed breakdown
+            q = all_quotes[0]
+            st.markdown(
+                f"**Configuration:** {q['config_name']}  \n"
+                f"**Actual working area:** {q['actual_x_ft']:.2f} ft × {q['actual_y_ft']:.2f} ft  \n"
+                f"**Nominal area used for pricing:** {q['area_sqft']:.2f} ft²"
+            )
 
-        st.markdown(
-            f"**Configuration:** {config.name}  \n"
-            f"**Actual working area:** {actual_x_ft:.2f} ft × {actual_y_ft:.2f} ft  \n"
-            f"**Nominal area used for pricing:** {area_sqft:.2f} ft²"
-        )
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Extrusion cost ($)", f"{q['extrusion_cost']:,.2f}")
+                st.metric("Steel cost ($)", f"{q['steel_cost']:,.2f}")
+                st.metric("Donor kit cost ($)", f"{donor_cost:,.2f}")
+                st.metric("Misc Electronics ($)", f"{MISC_ELECTRONICS_COST:,.2f}")
+                if plasma_unit_cost > 0:
+                    st.metric(f"Plasma unit ({plasma_unit_name}) ($)", f"{plasma_unit_cost:,.2f}")
+                st.metric("Misc add-on ($)", f"{q['misc_cost']:,.2f}")
+            with col2:
+                st.metric("Total build cost ($)", f"{q['total_cost']:,.2f}")
+                st.metric("Sell price ($)", f"{q['sell_price']:,.2f}")
+                st.metric("Profit ($)", f"{q['profit']:,.2f}")
+                st.metric("Actual margin (%)", f"{q['actual_margin_pct']:,.1f}%")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Extrusion cost ($)", f"{extrusion_cost:,.2f}")
-            st.metric("Steel cost ($)", f"{steel_cost:,.2f}")
-            st.metric("Donor kit cost ($)", f"{donor_cost:,.2f}")
-            st.metric("Misc Electronics ($)", f"{MISC_ELECTRONICS_COST:,.2f}")
+            # Parts lists for single config
+            st.subheader("Extrusion Parts List")
+            ext_rows = []
+            for part in q['extrusion_parts']:
+                ext_rows.append({
+                    "Description": part["description"],
+                    "Profile": part["profile"],
+                    "Length (mm)": part["length_mm"],
+                    "Length (in)": round(part["length_in"], 2),
+                    "Quantity": part["quantity"],
+                    "Unit price ($)": round(part["unit_price"], 2),
+                    "Line total ($)": round(part["line_total"], 2),
+                })
+            st.table(ext_rows)
+
+            st.subheader("Steel Frame Parts List")
+            steel_rows = []
+            for part in q['steel_parts']:
+                steel_rows.append({
+                    "Description": part["description"],
+                    "Size": part["size"],
+                    "Length (in)": round(part["length_in"], 2),
+                    "Length (ft)": round(part["length_ft"], 3),
+                    "Quantity": part["quantity"],
+                })
+            st.table(steel_rows)
+
+            st.markdown(
+                f"**Total steel length:** "
+                f"{sum(p['length_ft'] * p['quantity'] for p in q['steel_parts']):.3f} ft  \n"
+                f"**Steel cost (@ ${steel_price_per_ft:.2f}/ft):** ${q['steel_cost']:,.2f}"
+            )
+
+            st.subheader("Donor Kit / Other Major Components")
+            donor_rows = [{
+                "Item": "Amazon donor CNC kit (electronics, motors, wiring, plates, etc.)",
+                "Cost ($)": round(donor_cost, 2),
+            }, {
+                "Item": "Misc Electronics",
+                "Cost ($)": round(MISC_ELECTRONICS_COST, 2),
+            }]
             if plasma_unit_cost > 0:
-                st.metric(f"Plasma unit ({plasma_unit_name}) ($)", f"{plasma_unit_cost:,.2f}")
-            st.metric("Misc add-on ($)", f"{misc_cost:,.2f}")
-        with col2:
-            st.metric("Total build cost ($)", f"{total_cost:,.2f}")
-            st.metric("Sell price ($)", f"{sell_price:,.2f}")
-            st.metric("Profit ($)", f"{profit:,.2f}")
-            st.metric("Actual margin (%)", f"{actual_margin_pct:,.1f}%")
-
-        # -------- Parts list: Extrusions --------
-        st.subheader("Extrusion Parts List")
-
-        ext_rows = []
-        for part in extrusion_parts:
-            ext_rows.append({
-                "Description": part["description"],
-                "Profile": part["profile"],
-                "Length (mm)": part["length_mm"],
-                "Length (in)": round(part["length_in"], 2),
-                "Quantity": part["quantity"],
-                "Unit price ($)": round(part["unit_price"], 2),
-                "Line total ($)": round(part["line_total"], 2),
-            })
-        st.table(ext_rows)
-
-        # -------- Parts list: Steel --------
-        st.subheader("Steel Frame Parts List")
-
-        steel_rows = []
-        for part in steel_parts:
-            steel_rows.append({
-                "Description": part["description"],
-                "Size": part["size"],
-                "Length (in)": round(part["length_in"], 2),
-                "Length (ft)": round(part["length_ft"], 3),
-                "Quantity": part["quantity"],
-            })
-        st.table(steel_rows)
-
-        st.markdown(
-            f"**Total steel length:** "
-            f"{sum(p['length_ft'] * p['quantity'] for p in steel_parts):.3f} ft  \n"
-            f"**Steel cost (@ ${steel_price_per_ft:.2f}/ft):** ${steel_cost:,.2f}"
-        )
-
-        # -------- Donor kit --------
-        st.subheader("Donor Kit / Other Major Components")
-
-        donor_rows = [{
-            "Item": "Amazon donor CNC kit (electronics, motors, wiring, plates, etc.)",
-            "Cost ($)": round(donor_cost, 2),
-        }, {
-            "Item": "Misc Electronics",
-            "Cost ($)": round(MISC_ELECTRONICS_COST, 2),
-        }]
-        if plasma_unit_cost > 0:
-            donor_rows.append({
-                "Item": f"Plasma unit: {plasma_unit_name}",
-                "Cost ($)": round(plasma_unit_cost, 2),
-            })
-        st.table(donor_rows)
+                donor_rows.append({
+                    "Item": f"Plasma unit: {plasma_unit_name}",
+                    "Cost ($)": round(plasma_unit_cost, 2),
+                })
+            st.table(donor_rows)
+        else:
+            # Multiple configurations - show comparison table
+            comparison_table_data = {
+                "Configuration": [q['config_name'] for q in all_quotes],
+                "Working Area": [f"{q['actual_x_ft']:.2f} ft × {q['actual_y_ft']:.2f} ft" for q in all_quotes],
+                "Total Cost ($)": [f"{q['total_cost']:,.2f}" for q in all_quotes],
+                "Sale Price ($)": [f"{q['sell_price']:,.2f}" for q in all_quotes],
+                "Profit ($)": [f"{q['profit']:,.2f}" for q in all_quotes],
+            }
+            st.table(comparison_table_data)
+            st.metric("**Grand Total**", f"${total_grand_total:,.2f}")
 
         st.info(
             "You can reuse some of the donor kit's original extrusions in reality, "
@@ -750,24 +855,12 @@ def main():
             "This tool assumes you're buying the listed extrusions new for a conservative estimate."
         )
 
-        # Store quote data for PDF generation
-        st.session_state.quote_data = {
-            "customer_name": customer_name if customer_name else "Customer",
-            "config_name": config.name,
-            "actual_x_ft": actual_x_ft,
-            "actual_y_ft": actual_y_ft,
-            "sell_price": sell_price,
-        }
-
         # PDF Quote Generation
         st.subheader("Generate PDF Quote")
         if customer_name:
             pdf_bytes = generate_quote_pdf(
                 customer_name=customer_name,
-                config_name=config.name,
-                actual_x_ft=actual_x_ft,
-                actual_y_ft=actual_y_ft,
-                sell_price=sell_price,
+                configs_data=configs_data_for_pdf,
             )
             # Sanitize filename - remove or replace invalid characters
             safe_filename = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in customer_name)
