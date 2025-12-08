@@ -204,12 +204,12 @@ def generate_quote_pdf(
             plasma_sell_price = config['sell_price'] - machine_sell_price
             escaped_plasma_name = html.escape(plasma_unit_name)
             
-            # Create pricing breakdown table
+            # Create pricing breakdown table (use Paragraph objects for HTML formatting)
             pricing_data = [
-                ["Item", "Price"],
-                [f"<b>{escaped_config_name} Machine</b>", f"<b>${machine_sell_price:,.2f}</b>"],
-                [f"<b>Plasma Unit: {escaped_plasma_name}</b>", f"<b>${plasma_sell_price:,.2f}</b>"],
-                ["<b>TOTAL</b>", f"<b>${config['sell_price']:,.2f}</b>"],
+                [Paragraph("<b>Item</b>", normal_style), Paragraph("<b>Price</b>", normal_style)],
+                [Paragraph(f"{escaped_config_name} Machine", normal_style), Paragraph(f"${machine_sell_price:,.2f}", normal_style)],
+                [Paragraph(f"Plasma Unit: {escaped_plasma_name}", normal_style), Paragraph(f"${plasma_sell_price:,.2f}", normal_style)],
+                [Paragraph("<b>TOTAL</b>", normal_style), Paragraph(f"<b>${config['sell_price']:,.2f}</b>", normal_style)],
             ]
             
             pricing_table = Table(pricing_data, colWidths=[4*inch, 2*inch])
