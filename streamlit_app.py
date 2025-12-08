@@ -176,16 +176,11 @@ def generate_quote_pdf(
         
         # Create table data
         table_data = [["Configuration", "Working Area", "Price"]]
-        total_price = 0
         for config in configs_data:
             escaped_config_name = html.escape(config['config_name'])
             area_str = f"{config['actual_x_ft']:.2f} ft × {config['actual_y_ft']:.2f} ft"
             price_str = f"${config['sell_price']:,.2f}"
             table_data.append([escaped_config_name, area_str, price_str])
-            total_price += config['sell_price']
-        
-        # Add total row
-        table_data.append(["<b>TOTAL</b>", "", f"<b>${total_price:,.2f}</b>"])
         
         # Create table
         table = Table(table_data, colWidths=[3*inch, 2.5*inch, 1.5*inch])
@@ -197,14 +192,10 @@ def generate_quote_pdf(
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 12),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#d3d3d3')),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
         ]))
         story.append(table)
-        story.append(Spacer(1, 0.2*inch))
-        story.append(Paragraph(f"<b><font size=18>Grand Total: ${total_price:,.2f}</font></b>", price_style))
     
     story.append(Spacer(1, 0.4*inch))
     
@@ -696,7 +687,6 @@ def main():
         # Calculate quotes for all selected configurations
         all_quotes = []
         configs_data_for_pdf = []
-        total_grand_total = 0
         
         for config_name in selected_configs:
             config = MACHINE_CONFIGS[config_name]
@@ -761,7 +751,6 @@ def main():
                 "actual_y_ft": actual_y_ft,
                 "sell_price": sell_price,
             })
-            total_grand_total += sell_price
 
         # -------- Summary --------
         st.subheader("Quote Summary")
@@ -847,7 +836,6 @@ def main():
                 "Profit ($)": [f"{q['profit']:,.2f}" for q in all_quotes],
             }
             st.table(comparison_table_data)
-            st.metric("**Grand Total**", f"${total_grand_total:,.2f}")
 
         st.info(
             "You can reuse some of the donor kit's original extrusions in reality, "
