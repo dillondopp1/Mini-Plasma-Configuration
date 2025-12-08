@@ -1,3 +1,4 @@
+import html
 import io
 import json
 import math
@@ -149,10 +150,12 @@ def generate_quote_pdf(
     story.append(Paragraph("QUOTE", title_style))
     story.append(Spacer(1, 0.2*inch))
     
-    # Customer and Date
-    story.append(Paragraph(f"<b>Customer:</b> {customer_name}", normal_style))
+    # Customer and Date (escape XML special characters)
+    escaped_customer_name = html.escape(customer_name)
+    escaped_config_name = html.escape(config_name)
+    story.append(Paragraph(f"<b>Customer:</b> {escaped_customer_name}", normal_style))
     story.append(Paragraph(f"<b>Date:</b> {datetime.now().strftime('%B %d, %Y')}", normal_style))
-    story.append(Paragraph(f"<b>Configuration:</b> {config_name}", normal_style))
+    story.append(Paragraph(f"<b>Configuration:</b> {escaped_config_name}", normal_style))
     story.append(Paragraph(f"<b>Working Area:</b> {actual_x_ft:.2f} ft × {actual_y_ft:.2f} ft", normal_style))
     story.append(Spacer(1, 0.3*inch))
     
@@ -766,10 +769,13 @@ def main():
                 actual_y_ft=actual_y_ft,
                 sell_price=sell_price,
             )
+            # Sanitize filename - remove or replace invalid characters
+            safe_filename = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in customer_name)
+            safe_filename = safe_filename.replace(' ', '_')
             st.download_button(
                 label="Download PDF Quote",
                 data=pdf_bytes,
-                file_name=f"Quote_{customer_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                file_name=f"Quote_{safe_filename}_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",
             )
         else:
