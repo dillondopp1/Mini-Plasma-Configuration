@@ -115,6 +115,8 @@ def save_plasma_units(plasma_units: Dict[str, float]) -> None:
 def generate_quote_pdf(
     customer_name: str,
     configs_data: List[Dict],  # List of dicts with: config_name, actual_x_ft, actual_y_ft, sell_price
+    plasma_unit_cost: float = 0.0,
+    plasma_unit_name: str = None,
 ) -> bytes:
     """
     Generate a PDF quote with customer name, prices (side by side if multiple), and specifications.
@@ -195,7 +197,36 @@ def generate_quote_pdf(
         story.append(Paragraph(f"<b>Configuration:</b> {escaped_config_name}", normal_style))
         story.append(Paragraph(f"<b>Working Area:</b> {config['actual_x_ft']:.2f} ft × {config['actual_y_ft']:.2f} ft", normal_style))
         story.append(Spacer(1, 0.2*inch))
-        story.append(Paragraph(f"<b><font size=18>Total Price: ${config['sell_price']:,.2f}</font></b>", normal_style))
+        
+        # Show breakdown if plasma unit is included
+        if plasma_unit_cost > 0 and plasma_unit_name:
+            machine_sell_price = config.get('machine_sell_price', config['sell_price'] - plasma_unit_cost)
+            plasma_sell_price = config['sell_price'] - machine_sell_price
+            escaped_plasma_name = html.escape(plasma_unit_name)
+            
+            # Create pricing breakdown table
+            pricing_data = [
+                ["Item", "Price"],
+                [f"<b>{escaped_config_name} Machine</b>", f"<b>${machine_sell_price:,.2f}</b>"],
+                [f"<b>Plasma Unit: {escaped_plasma_name}</b>", f"<b>${plasma_sell_price:,.2f}</b>"],
+                ["<b>TOTAL</b>", f"<b>${config['sell_price']:,.2f}</b>"],
+            ]
+            
+            pricing_table = Table(pricing_data, colWidths=[4*inch, 2*inch])
+            pricing_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, -1), (-1, -1), 14),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#d3d3d3')),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('BOTTOMPADDING', (0, -1), (-1, -1), 12),
+            ]))
+            story.append(pricing_table)
+        else:
+            story.append(Paragraph(f"<b><font size=18>Total Price: ${config['sell_price']:,.2f}</font></b>", normal_style))
     else:
         # Multiple configurations - create a table
         story.append(Paragraph("<b>Configurations & Pricing</b>", heading_style))
@@ -747,6 +778,17 @@ def main():
             base_profit_calc = base_profit + area_sqft * profit_per_sqft
             sell_price = total_cost + base_profit_calc
             
+            # Calculate machine cost separately (without plasma unit) for PDF breakdown
+            if plasma_unit_cost > 0:
+                # Calculate base material cost without plasma unit
+                base_material_cost_no_plasma = extrusion_cost + steel_cost + donor_cost + MISC_ELECTRONICS_COST
+                misc_cost_no_plasma = base_material_cost_no_plasma * (misc_addon_pct / 100.0)
+                total_cost_no_plasma = base_material_cost_no_plasma + misc_cost_no_plasma
+                machine_sell_price = total_cost_no_plasma + base_profit_calc
+                machine_sell_price = math.ceil(machine_sell_price / 10.0) * 10.0
+            else:
+                machine_sell_price = sell_price
+            
             # Round sell_price up to the nearest $10
             sell_price = math.ceil(sell_price / 10.0) * 10.0
             
@@ -777,6 +819,7 @@ def main():
                 "actual_x_ft": actual_x_ft,
                 "actual_y_ft": actual_y_ft,
                 "sell_price": sell_price,
+                "machine_sell_price": machine_sell_price if plasma_unit_cost > 0 else sell_price,
             })
 
         # -------- Summary --------
@@ -876,6 +919,8 @@ def main():
             pdf_bytes = generate_quote_pdf(
                 customer_name=customer_name,
                 configs_data=configs_data_for_pdf,
+                plasma_unit_cost=plasma_unit_cost,
+                plasma_unit_name=plasma_unit_name,
             )
             # Sanitize filename - remove or replace invalid characters
             safe_filename = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in customer_name)
